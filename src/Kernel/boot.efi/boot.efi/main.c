@@ -15,7 +15,7 @@ void EfiPanicBoot(char *message, char *file, int line) {
     __builtin_unreachable();
 }
 
-EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
+EFI_STATUS __attribute__((ms_abi)) EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
     InitializeLib(ImageHandle, SystemTable);
 
