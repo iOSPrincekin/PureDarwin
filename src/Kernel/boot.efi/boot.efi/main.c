@@ -18,6 +18,10 @@ void EfiPanicBoot(char *message, char *file, int line) {
 EFI_STATUS __attribute__((ms_abi)) EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
     InitializeLib(ImageHandle, SystemTable);
+    
+    Print(L"FirmwareVendor: %s:\n", SystemTable->FirmwareVendor);
+
+    Print(L"FirmwareRevision: %d:\n", SystemTable->FirmwareRevision);
 
     return EFI_SUCCESS;
 }

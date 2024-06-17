@@ -160,24 +160,31 @@ LEXT(pstart)
  *	------------------------- 0
  *
  */	
+    /** 1.保存 kernbootstruct */
 	mov	%eax, %edi	/* save kernbootstruct */
 
+    /** 2.使用低32位栈，大小为 I386_PGBYTES*4*4，#define I386_PGBYTES            4096  */
 	/* Use low 32-bits of address as 32-bit stack */
 	movl	$EXT(low_eintstack), %esp
-	
+	/** 3.非debug 模式，不产生任何代码 */
 	POSTCODE(PSTART_ENTRY)
 
 	/*
 	 * Set up segmentation
 	 */
+    /** 4.获取保护模式的全局描述符地址 */
 	movl	$EXT(protected_mode_gdtr), %eax
+    /** 5.lgdt 指令为其指定全局描述符表的地址及偏移 量 */
 	lgdtl	(%eax)
 
 	/*
 	 * Rebase Boot page tables to kernel base address.
 	 */
+    /** 6.获取页表数组地址 _BootPML4 数组大小为 0x1000，为512 个8字节的 uint64_t */
 	movl	$EXT(BootPML4), %eax			// Level 4:
+    /** 7._BootPML4 页表的地址存入第1个元素 */
 	add	%eax, 0*8+0(%eax)			//  - 1:1
+    /** 8._BootPML4 页表的地址存入最后1个元素 */
 	add	%eax, KERNEL_PML4_INDEX*8+0(%eax)	//  - kernel space
 
 	movl	$EXT(BootPDPT), %edx			// Level 3:
