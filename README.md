@@ -279,3 +279,37 @@ clean:
 
 
 
+
+#### 12.SWITCH_TO_64BIT_MODE
+
+
+	/* Must not clobber EDI */
+#define SWITCH_TO_64BIT_MODE					 \
+    /** #define CR4_PAE         0x00000020 == 1 << 5，CR4.pae 位置为1 */ \
+	movl	$(CR4_PAE),%eax		/* enable PAE */	;\
+    /** 将eax赋值给cr4，CR4.pae 位置为1，开启cr4.pae的位，即开启分页模式 */   \
+	movl	%eax,%cr4					;\
+    /** :#define MSR_IA32_EFER  0xC0000080，赋值给 ecx寄存器 */ \
+	movl    $MSR_IA32_EFER,%ecx				;\
+    /** 读取 MSR 寄存器的值到 EDX:EAX 中*/     \
+	rdmsr							;\
+	/* enable long mode, NX */				;\
+    /** 设置 MSR_IA32_EFER_LME 0x00000100 = 1 << 8 ,MSR_IA32_EFER_NXE                       0x00000800 = 1 << 11,将 %eax 中的第9、12位置为1 */    \
+	orl	$(MSR_IA32_EFER_LME | MSR_IA32_EFER_NXE),%eax	;\
+    /** 重新将 修改后的 EDX:EAX 写入 MSR 寄存器 ，开启长模式 */   \
+	wrmsr							;\
+    /** 获取 BootPML4 页目录的地址，赋值给 eax寄存器 */  \
+	movl	$EXT(BootPML4),%eax				;\
+    /** 将 eax 寄存器的值赋值给 cr3 */   \
+	movl	%eax,%cr3					;\
+    /** 将 cr0 寄存器的值赋值给 eax寄存器 */ \
+	movl	%cr0,%eax					;\
+    /** #define CR0_PG  0x80000000  #define CR0_WP  0x00010000 ,将 eax 对应位置为1，开启分页  */ \
+	orl	$(CR0_PG|CR0_WP),%eax	/* enable paging */	;\
+    /** 把 eax值回写给 cr0，开启分页*/  \
+	movl	%eax,%cr0					;\
+    /** 长跳转64位代码，正式进入64，#define KERNEL64_CS     0x08  , KERNEL64_CS 代表64位代码段选择子在gdt的位置，64f代表下面的64:,即跳转到下面的 64位代码段 */ \
+	ljmpl	$KERNEL64_CS,$64f				;\
+64:								;\
+    /** .code64 表示下面的代码是 64 代码 */ \
+	.code64
