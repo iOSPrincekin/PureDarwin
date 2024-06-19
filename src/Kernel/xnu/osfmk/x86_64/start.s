@@ -180,23 +180,30 @@ LEXT(pstart)
 	/*
 	 * Rebase Boot page tables to kernel base address.
 	 */
-    /** 6.获取页表数组地址 _BootPML4 数组大小为 0x1000，为512 个8字节的 uint64_t */
+    /** 6.获取页表数组地址 BootPML4 数组大小为 0x1000，为512 个8字节的 uint64_t */
 	movl	$EXT(BootPML4), %eax			// Level 4:
-    /** 7._BootPML4 页表的地址存入第1个元素 */
+    /** 7.BootPML4 页表的地址存入第1个元素 */
 	add	%eax, 0*8+0(%eax)			//  - 1:1
-    /** 8._BootPML4 页表的地址存入最后1个元素 */
+    /** 8.BootPML4 页表的地址存入最后1个元素 */
 	add	%eax, KERNEL_PML4_INDEX*8+0(%eax)	//  - kernel space
-
+    
+    /** 9.获取页表数组地址 BootPDPT 数组大小为 0x1000，为512 个8字节的 uint64_t */
 	movl	$EXT(BootPDPT), %edx			// Level 3:
+    /** 10.BootPML4 页表的地址存入BootPDPT第1个元素 */
 	add	%eax, 0*8+0(%edx)
+    /** 11.BootPML4 页表的地址存入BootPDPT第2个元素 */
 	add	%eax, 1*8+0(%edx)
+    /** 12.BootPML4 页表的地址存入BootPDPT第3个元素 */
 	add	%eax, 2*8+0(%edx)
+    /** 13.BootPML4 页表的地址存入BootPDPT第4个元素 */
 	add	%eax, 3*8+0(%edx)
 
+    /** 非debug 模式，忽略*/
 	POSTCODE(PSTART_REBASE)
 
 /* the following code is shared by the master CPU and all slave CPUs */
 L_pstart_common:
+    /** 切换到 64位 模式 */
 	/*
 	 * switch to 64 bit mode
 	 */
