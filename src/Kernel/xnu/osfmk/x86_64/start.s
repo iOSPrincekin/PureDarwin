@@ -130,7 +130,6 @@ EXT(mc_task_stack_end):
     /** 把 eax值回写给 cr0，开启分页*/  \
 	movl	%eax,%cr0					;\
     /** 长跳转64位代码，正式进入64，#define KERNEL64_CS     0x08  , KERNEL64_CS 代表64位代码段选择子在gdt的位置，64f代表下面的64:,即跳转到下面的 64位代码段 */ \
-	ljmpl	$KERNEL64_CS,$64f				;\
 64:								;\
     /** .code64 表示下面的代码是 64 代码 */ \
 	.code64
@@ -223,6 +222,7 @@ L_pstart_common:
 	SWITCH_TO_64BIT_MODE
 
 	/* Flush data segment selectors */
+    /** 刷新段寄存器，全部设置为 0 */
 	xor	%eax, %eax
 	mov	%ax, %ss
 	mov	%ax, %ds
@@ -230,32 +230,64 @@ L_pstart_common:
 	mov	%ax, %fs
 	mov	%ax, %gs
 
+    /** 这个指令对 %edi 寄存器与自身进行按位与（AND）操作 */
+    /** stack canaries 又稱為 stack protector, 此方法會在程式中加入 “canary value". 之所以會稱之為金絲雀 (canary) 是因為早期煤礦工人常會在工作時發生急性一氧化碳(煤氣)中毒事件. 但以前沒有先進裝備來偵測一氧化碳(煤氣), 所以煤礦工人都會帶金絲雀 (canary) 進去礦坑工作. 原因是金絲雀對一氧化碳(煤氣)非常敏感, 些許煤氣就會讓金絲雀啼叫甚至死亡. 因此礦工會將金絲雀放在礦坑中作為是否需要逃生的依據.
+     
+     同理可知, 若我們先在程式中加入 “canary value", 若 buffer overflow 異常情況發生, 則會修改 “canary value". 所以我們可透過檢查 “canary value" 是否遭修改來決定程式是否繼續往下執行或者中止結束.*/
+    /** "BSP" 是 "Bootstrap Processor" 的缩写，可以理解为引导处理器。在多处理器系统中，引导处理器是系统启动时负责初始化和引导操作系统的主要处理器。
+        如果一切正常，CPU就开始运行了。在一个多处理器或多核处理器的系统中，会有一个CPU被动态的指派为引导处理器（bootstrap processor，简写为BSP），用于执行全部的BIOS和内核初始化代码。其余的处理器，此时被称为应用处理器（application processor，简写为AP），一直保持停机状态直到内核明确激活他们为止。*/
 	test	%edi, %edi /* Populate stack canary on BSP */
+    /** 如果 test    %edi, %edi 结果为0 即 edi为 0，则跳转到 Lvstartshim */
 	jz	Lvstartshim
-
+    
+    /** 将1赋值给 eax,作为 cpuid的参数 */
 	mov	$1, %eax
+    /** 将 eax中的 1 传给 cpuid，获取cpu版本信息：Type, Family, Model, and Stepping ID */
 	cpuid
+    /** 测试 ecx的 第31位是否为1 即 ECX.RDRAND[bit 30] = 1.
+     RDRAND指令返回一个随机数。所有支持RDRAND指令的英特尔处理器通过报告CPUID.01H:ECX.RDRAND[bit 30] = 1来指示RDRAND指令的可用性。 */
 	test	$(1 << 30), %ecx
+    /** 如果 ECX.RDRAND[bit 30] == 0，则跳转到 Lnon_rdrand，即不支持 RDRAND */
 	jz	Lnon_rdrand
+    /** 随机生成 确定性（伪随机）数产生器（Deterministic Random Bit Generators (DRBG)） 的熵 ，
+      存储到 rax寄存器中 */
 	rdrand	%rax		/* RAX := 64 bits of DRBG entropy */
+    /** 如果RDRAND指令没有执行成功（发生溢出），则跳转到 Lnon_rdrand  */
 	jnc	Lnon_rdrand	/* TODO: complain if DRBG fails at this stage */
 
 Lstore_random_guard:
+    /** ah 寄存器置为 0 */
 	xor	%ah, %ah	/* Security: zero second byte of stack canary */
+    /** long __stack_chk_guard[GUARD_MAX] = {0, 0, 0, 0, 0, 0, 0, 0};  把rax的值写入 __stack_chk_guard*/
+    /** %rip-relative addressing for global variables
+     x86-64 code often refers to globals using %rip-relative addressing: a global variable named a is referenced as a(%rip). This style of reference supports position-independent code (PIC), a security feature. It specifically supports position-independent executables (PIEs), which are programs that work independently of where their code is loaded into memory.
+
+     When the operating system loads a PIE, it picks a random starting point and loads all instructions and globals relative to that starting point. The PIE's instructions never refer to global variables using direct addressing: there is no movl global_int, %eax. Globals are referenced relatively instead, using deltas relative to the next %rip: to load a global variable into a register, the compiler emits movl global_int(%rip), %eax. These relative addresses work independent of the starting point! For instance, consider an instruction located at (starting-point + 0x80) that loads a variable g located at (starting-point + 0x1000) into %rax. In a non-PIE, the instruction might be written as movq g, %rax; but this relies on g having a fixed address. In a PIE, the instruction might be written movq g(%rip), %rax, which works out without having to know the starting address of the program's code in memory at compile time (instead, %rip contains a number some known number of bytes apart from the starting point, so any address relative to %rip is also relative to the starting point). ===> https://cs.brown.edu/courses/csci1310/2020/notes/l08.html */
+    /** Note that symbol_name(%rip) calculates the offset required to reach symbol_name from here, rather than adding the absolute address of symbol_name to RIP as an offset.
+     
+     But yes, for numeric offsets like mov 4(%rip), %rax, that will load 8 bytes starting at 4 bytes past the end of this instruction. ===> https://stackoverflow.com/questions/29421766/what-does-mov-offsetrip-rax-do */
 	movq	%rax, ___stack_chk_guard(%rip)
 	/* %edi = boot_args_start if BSP */
 Lvstartshim:	
-
+    /** 非debug 模式，忽略*/
 	POSTCODE(PSTART_VSTART)
 
 	/* %edi = boot_args_start */
-	
+	/** 加载 _vstart 地址到 rcx 寄存器 */
 	leaq	_vstart(%rip), %rcx
+    /** #define PML4SHIFT  39 ; #define NBPML4  (1ULL << PML4SHIFT) ;
+     #define KERNEL_PML4_COUNT  1; #define KERNEL_BASE (0ULL - (NBPML4 * KERNEL_PML4_COUNT))
+     将 KERNEL_BASE 地址 即 -0x8000000000 = 0xffffff80 00000000 传给 寄存器 rax */
 	movq	$(KERNEL_BASE), %rax		/* adjust pointer up high */
+    /** 将 rsp 与 rax 寄存器进行或 运算，即  rsp = 0xffffff8000000000 + rsp */
 	or	%rax, %rsp			/* and stack pointer up there */
+    /** 将 rax 与 rcx 寄存器进行或 运算，即  rax = 0xffffff8000000000 + rcx，为 _vstart 方法的地址  */
 	or	%rcx, %rax
+    /** 对齐 rsp */
 	andq	$0xfffffffffffffff0, %rsp	/* align stack */
+    /** 将 rbp 置为 0 */
 	xorq	%rbp, %rbp			/* zero frame pointer */
+    /** 调用 vstart 方法 */
 	callq	*%rax
 
 Lnon_rdrand:
